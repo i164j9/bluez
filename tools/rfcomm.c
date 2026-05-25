@@ -75,7 +75,6 @@ static void sig_hup(int sig)
 	(void) sig;
 	return;
 }
-
 static void sig_term(int sig)
 {
 	(void) sig;
