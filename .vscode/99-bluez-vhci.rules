@@ -1,0 +1,1 @@
+SUBSYSTEM=="misc", KERNEL=="vhci", GROUP="dev", MODE="0660"

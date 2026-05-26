@@ -1,0 +1,82 @@
+BR/EDR RFCOMM/SPP qualification matrix
+======================================
+
+Canonical implementation surface
+--------------------------------
+
+- BlueZ daemon registrations through org.bluez.ProfileManager1 are the
+  canonical SPP server path.
+- Daemon-generated SPP SDP records with Channel omitted or set to 0 are the
+  preferred interoperable server configuration.
+- tools/rfcomm is a compatibility and debugging tool. It is useful for manual
+  interoperability checks, but it is not the primary qualification surface.
+
+Execution matrix
+----------------
+
+Area: SPP server registration
+Surface: ProfileManager1 RegisterProfile using SPP UUID and no Channel
+Expected result: BlueZ allocates an RFCOMM channel dynamically and publishes a
+generated Serial Port SDP record.
+Automation: Covered by daemon-side validation in src/profile.c and emulator
+transport coverage in tools/rfcomm-tester.c (BtIO RFCOMM Server - Dynamic
+Channel).
+Qualification run: PTS/manual browse of the published local SDP record.
+
+Area: Manual SPP ServiceRecord validation
+Surface: ProfileManager1 RegisterProfile using SPP UUID with ServiceRecord
+Expected result: BlueZ rejects malformed records and records whose RFCOMM
+channel does not match the configured listening channel.
+Automation: Covered by daemon-side validation in src/profile.c.
+Qualification run: Negative RegisterProfile coverage plus SDP browse of the
+accepted record.
+
+Area: RFCOMM authorization gating
+Surface: ProfileManager1 RegisterProfile with RequireAuthorization=true
+Expected result: Incoming RFCOMM setup is deferred until the profile accepts
+the connection.
+Automation: Covered by tools/rfcomm-tester.c (BtIO RFCOMM Server -
+Authorization Confirm).
+Qualification run: PTS or manual incoming connection attempts with profile-side
+acceptance logging enabled.
+
+Area: RFCOMM security policy
+Surface: ProfileManager1 RequireAuthentication and tools/rfcomm security
+settings
+Expected result: Server and compatibility-tool sockets request BR/EDR security
+before profile traffic is exchanged.
+Automation: Validate via emulator transport tests where available and manual
+interoperability runs for peer-specific behavior.
+Qualification run: Pairing, authentication, and encrypted reconnect coverage in
+the BR/EDR PTS plan.
+
+Area: Remote SDP discovery
+Surface: tools/rfcomm connect path without an explicit RFCOMM channel
+Expected result: BlueZ discovers the peer Serial Port channel through SDP
+before opening RFCOMM.
+Automation: Covered by tools/profile-tester.c using bluetoothd,
+ProfileManager1, hciemu, and an emulated peer-side SDP responder.
+Qualification run: PTS SDP/SPP browse and connect matrix against remote SPP
+servers.
+
+Recommended PTS-oriented runs
+-----------------------------
+
+1. Register an SPP server through ProfileManager1 without Channel and without
+   ServiceRecord, then verify local and remote SDP browse output.
+2. Repeat registration with RequireAuthentication=true and
+   RequireAuthorization=true, then verify authorization happens before the
+   profile receives NewConnection.
+3. Register a fixed-channel SPP server with a manual ServiceRecord and verify
+   that malformed or channel-mismatched records are rejected.
+4. Use tools/rfcomm as a compatibility client against remote SPP servers to
+   confirm SDP-based channel discovery and BR/EDR security negotiation.
+
+Logging guidance
+----------------
+
+- Run bluetoothd in the foreground with debug enabled for src/profile.c when
+  validating registration, SDP publication, and authorization flow.
+- Capture btmon traces for BR/EDR setup, SDP browse, and RFCOMM establishment.
+- Record the allocated RFCOMM channel and the SDP browse output for each PTS or
+  interoperability run.

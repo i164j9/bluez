@@ -1,0 +1,147 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "BlueZ: autoreconf",
+      "type": "shell",
+      "command": "autoreconf -fi",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: configure debug",
+      "type": "shell",
+      "command": "mkdir -p \"${workspaceFolder}/build/debug\" && cd \"${workspaceFolder}/build/debug\" && \"${workspaceFolder}/configure\" --enable-debug --disable-optimization --enable-testing --disable-systemd --disable-cups --disable-manpages --with-udevdir=/usr/lib/udev",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: build debug",
+      "type": "shell",
+      "command": "cd \"${workspaceFolder}/build/debug\" && make -j\"$(nproc)\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": [
+        "BlueZ: configure debug"
+      ],
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "BlueZ: configure release",
+      "type": "shell",
+      "command": "mkdir -p \"${workspaceFolder}/build/release\" && cd \"${workspaceFolder}/build/release\" && \"${workspaceFolder}/configure\" --prefix=/usr --mandir=/usr/share/man --sysconfdir=/etc --localstatedir=/var --disable-systemd --disable-cups --disable-manpages --with-udevdir=/usr/lib/udev",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: build release",
+      "type": "shell",
+      "command": "cd \"${workspaceFolder}/build/release\" && make -j\"$(nproc)\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": [
+        "BlueZ: configure release"
+      ],
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "BlueZ: build profile-tester",
+      "type": "shell",
+      "command": "cd \"${workspaceFolder}/build/debug\" && make -j\"$(nproc)\" tools/profile-tester",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": [
+        "BlueZ: configure debug"
+      ],
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "BlueZ: start private debug bus",
+      "type": "shell",
+      "command": "bus_dir=\"${workspaceFolder}/build/debug/run/dbus\" && bus_pid=\"$bus_dir/bus.pid\" && bus_info=\"$bus_dir/bus.info\" && bus_socket=\"$bus_dir/system_bus_socket\" && mkdir -p \"$bus_dir\" && if [ -f \"$bus_pid\" ] && kill -0 \"$(cat \"$bus_pid\")\" 2>/dev/null; then kill \"$(cat \"$bus_pid\")\"; fi && rm -f \"$bus_socket\" \"$bus_pid\" \"$bus_info\" && addr=\"unix:path=$bus_socket\" && info=\"$(dbus-daemon --session --fork --address=\"$addr\" --print-address=1 --print-pid=1)\" && printf '%s\\n' \"$info\" > \"$bus_info\" && printf '%s\\n' \"$info\" | sed -n '2p' > \"$bus_pid\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: inspect vhci host state (sudo)",
+      "type": "shell",
+      "command": "sudo sh -c 'printf \"modules:\\\n\"; grep -E \"^(hci_vhci|vhci_hcd) \" /proc/modules || true; printf \"\\nproc-misc:\\\n\"; grep -n vhci /proc/misc || true; printf \"\\nsysfs-misc:\\\n\"; ls -l /sys/class/misc | grep vhci || true; printf \"\\ndevnode:\\\n\"; ls -l /dev/vhci || true; printf \"\\nudev rule:\\\n\"; sed -n \"1,20p\" /etc/udev/rules.d/99-bluez-vhci.rules 2>/dev/null || echo missing'",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: install vhci udev rule (sudo)",
+      "type": "shell",
+      "command": "sudo install -m 0644 \"${workspaceFolder}/.vscode/99-bluez-vhci.rules\" /etc/udev/rules.d/99-bluez-vhci.rules && sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=misc --sysname-match=vhci && sudo udevadm settle && ls -l /dev/vhci",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: check profile-tester prerequisites",
+      "type": "shell",
+      "command": "echo 'Inspecting emulator prerequisites'; printf 'user: '; id -un; printf 'groups: '; id -nG; printf 'hci_vhci: '; if grep -q '^hci_vhci ' /proc/modules; then echo loaded; else echo not-loaded; fi; printf 'vhci_hcd: '; if grep -q '^vhci_hcd ' /proc/modules; then echo loaded; else echo not-loaded; fi; if [ -e /dev/vhci ]; then echo '/dev/vhci: present'; ls -l /dev/vhci; test -r /dev/vhci && echo 'read access: yes' || echo 'read access: no'; test -w /dev/vhci && echo 'write access: yes' || echo 'write access: no'; else echo '/dev/vhci: missing'; echo 'Missing /dev/vhci. Load the Bluetooth hci_vhci kernel module or run emulator-backed tests in a VM/test-runner environment.' >&2; exit 1; fi",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: prepare bluetoothd debug",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "BlueZ: build debug",
+        "BlueZ: start private debug bus"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: prepare profile-tester debug",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "BlueZ: build profile-tester",
+        "BlueZ: start private debug bus",
+        "BlueZ: check profile-tester prerequisites"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "BlueZ: check debug",
+      "type": "shell",
+      "command": "cd \"${workspaceFolder}/build/debug\" && make -j\"$(nproc)\" check",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": [
+        "BlueZ: build debug"
+      ],
+      "problemMatcher": [
+        "$gcc"
+      ]
+    }
+  ]
+}

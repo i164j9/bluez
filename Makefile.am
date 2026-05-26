@@ -510,7 +510,7 @@ EXTRA_DIST += doc/org.bluez.obex.Client.rst doc/org.bluez.obex.Session.rst \
 		doc/org.bluez.obex.Image.rst
 
 EXTRA_DIST += doc/pics-opp.txt doc/pixit-opp.txt \
-		doc/pts-opp.txt
+		doc/pts-opp.txt doc/pts-rfcomm-spp.txt
 
 EXTRA_DIST += doc/btsnoop.txt
 

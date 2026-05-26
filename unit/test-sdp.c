@@ -633,6 +633,128 @@ static void register_file_transfer(void)
 	update_db_timestamp();
 }
 
+static bool record_has_uuid_attr(const sdp_record_t *rec, uint16_t attr,
+								uint16_t uuid16)
+{
+	sdp_list_t *list;
+	sdp_list_t *entry;
+	uuid_t uuid;
+	bool match = false;
+
+	if (sdp_get_uuidseq_attr(rec, attr, &list) < 0)
+		return false;
+
+	sdp_uuid16_create(&uuid, uuid16);
+
+	for (entry = list; entry; entry = entry->next) {
+		uuid_t *value = entry->data;
+
+		if (value && sdp_uuid_cmp(value, &uuid) == 0) {
+			match = true;
+			break;
+		}
+	}
+
+	sdp_list_free(list, free);
+
+	return match;
+}
+
+static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
+{
+	sdp_list_t *descs;
+	sdp_list_t *entry;
+	uuid_t uuid;
+	bool match = false;
+
+	if (sdp_get_profile_descs(rec, &descs) < 0)
+		return false;
+
+	sdp_uuid16_create(&uuid, uuid16);
+
+	for (entry = descs; entry; entry = entry->next) {
+		sdp_profile_desc_t *desc = entry->data;
+
+		if (desc && sdp_uuid_cmp(&desc->uuid, &uuid) == 0) {
+			match = true;
+			break;
+		}
+	}
+
+	sdp_list_free(descs, free);
+
+	return match;
+}
+
+static sdp_record_t *find_record_by_service_class(uint16_t uuid16)
+{
+	sdp_list_t *records;
+	sdp_list_t *entry;
+	uuid_t uuid;
+
+	sdp_uuid16_create(&uuid, uuid16);
+	records = sdp_get_record_list();
+
+	for (entry = records; entry; entry = entry->next) {
+		sdp_record_t *rec = entry->data;
+		sdp_list_t *classes;
+		sdp_list_t *class_entry;
+
+		if (sdp_get_service_classes(rec, &classes) < 0)
+			continue;
+
+		for (class_entry = classes; class_entry; class_entry = class_entry->next) {
+			uuid_t *value = class_entry->data;
+
+			if (value && sdp_uuid_cmp(value, &uuid) == 0) {
+				sdp_list_free(classes, free);
+				return rec;
+			}
+		}
+
+		sdp_list_free(classes, free);
+	}
+
+	return NULL;
+}
+
+static int record_get_proto_port(const sdp_record_t *rec, uint16_t uuid16)
+{
+	sdp_list_t *protos;
+	int port;
+
+	if (sdp_get_access_protos(rec, &protos) < 0)
+		return -1;
+
+	port = sdp_get_proto_port(protos, uuid16);
+	sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free, NULL);
+	sdp_list_free(protos, NULL);
+
+	return port;
+}
+
+static void test_serial_port_record_shape(gconstpointer data)
+{
+	sdp_record_t *rec;
+
+	sdp_svcdb_reset();
+	set_fixed_db_timestamp(0x496f0654);
+
+	register_public_browse_group();
+	register_server_service();
+	register_serial_port();
+
+	rec = find_record_by_service_class(SERIAL_PORT_SVCLASS_ID);
+	g_assert_nonnull(rec);
+	g_assert_true(record_has_uuid_attr(rec, SDP_ATTR_BROWSE_GRP_LIST,
+						PUBLIC_BROWSE_GROUP));
+	g_assert_true(record_has_profile_desc(rec, SERIAL_PORT_PROFILE_ID));
+	g_assert_cmpint(record_get_proto_port(rec, RFCOMM_UUID), ==, 1);
+
+	sdp_svcdb_reset();
+	tester_test_passed();
+}
+
 static struct context *create_context(gconstpointer data)
 {
 	struct context *context = g_new0(struct context, 1);
@@ -774,6 +896,8 @@ int main(int argc, char *argv[])
 			0x11, 0x05, 0x00, 0x01, 0x00),
 		raw_pdu(0x03, 0x00, 0x01, 0x00, 0x09, 0x00, 0x01, 0x00,
 			0x01, 0x00, 0x01, 0x00, 0x01, 0x00));
+	tester_add("/sdp/record/serial-port-shape", NULL, NULL,
+			test_serial_port_record_shape, NULL);
 	define_ss("BV-01-C/UUID-32",
 		raw_pdu(0x02, 0x00, 0x01, 0x00, 0x0a, 0x35, 0x05, 0x1a,
 			0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00),

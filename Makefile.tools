@@ -83,6 +83,7 @@ if TESTING
 noinst_PROGRAMS += emulator/btvirt emulator/b1ee emulator/hfp \
 					peripheral/btsensor tools/3dsp \
 					tools/mgmt-tester tools/gap-tester \
+					tools/profile-tester \
 					tools/l2cap-tester tools/sco-tester \
 					tools/smp-tester tools/hci-tester \
 					tools/rfcomm-tester tools/bnep-tester \
@@ -147,6 +148,7 @@ tools_l2cap_tester_LDADD = lib/libbluetooth-internal.la \
 				src/libshared-glib.la $(GLIB_LIBS)
 
 tools_rfcomm_tester_SOURCES = tools/rfcomm-tester.c monitor/bt.h \
+				btio/btio.h btio/btio.c \
 				emulator/hciemu.h emulator/hciemu.c \
 				emulator/vhci.h emulator/vhci.c \
 				emulator/btdev.h emulator/btdev.c \
@@ -180,6 +182,20 @@ tools_gap_tester_SOURCES = tools/gap-tester.c monitor/bt.h \
 				emulator/bthost.h emulator/bthost.c \
 				emulator/smp.c
 tools_gap_tester_LDADD =  lib/libbluetooth-internal.la \
+				gdbus/libgdbus-internal.la \
+				src/libshared-glib.la \
+				$(GLIB_LIBS) $(DBUS_LIBS)
+
+tools_profile_tester_SOURCES = tools/profile-tester.c monitor/bt.h \
+				emulator/hciemu.h emulator/hciemu.c \
+				emulator/vhci.h emulator/vhci.c \
+				emulator/btdev.h emulator/btdev.c \
+				emulator/bthost.h emulator/bthost.c \
+				emulator/smp.c \
+				src/sdpd.h src/sdpd-database.c \
+				src/sdpd-service.c src/sdpd-request.c \
+				src/log.h src/log.c
+tools_profile_tester_LDADD = lib/libbluetooth-internal.la \
 				gdbus/libgdbus-internal.la \
 				src/libshared-glib.la \
 				$(GLIB_LIBS) $(DBUS_LIBS)

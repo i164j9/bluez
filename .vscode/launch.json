@@ -1,0 +1,68 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "BlueZ: debug bluetoothd",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/debug/src/bluetoothd",
+      "args": [
+        "--nodetach",
+        "--debug=src/profile.c"
+      ],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "BlueZ: prepare bluetoothd debug",
+      "environment": [
+        {
+          "name": "DBUS_SYSTEM_BUS_ADDRESS",
+          "value": "unix:path=${workspaceFolder}/build/debug/run/dbus/system_bus_socket"
+        }
+      ],
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "BlueZ: debug profile-tester",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/debug/tools/profile-tester",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "BlueZ: prepare profile-tester debug",
+      "environment": [
+        {
+          "name": "DBUS_SYSTEM_BUS_ADDRESS",
+          "value": "unix:path=${workspaceFolder}/build/debug/run/dbus/system_bus_socket"
+        }
+      ],
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "BlueZ: debug bluetoothd + profile-tester",
+      "configurations": [
+        "BlueZ: debug bluetoothd",
+        "BlueZ: debug profile-tester"
+      ],
+      "stopAll": true
+    }
+  ]
+}

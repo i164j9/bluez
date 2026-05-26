@@ -1,0 +1,7 @@
+build/debug/
+build/release/
+
+autom4te.cache/output.*
+autom4te.cache/traces.*
+
+*~

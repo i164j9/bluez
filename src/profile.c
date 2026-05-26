@@ -42,7 +42,6 @@
 #include "service.h"
 
 #define DUN_DEFAULT_CHANNEL	1
-#define SPP_DEFAULT_CHANNEL	3
 #define HSP_HS_DEFAULT_CHANNEL	6
 #define HFP_HF_DEFAULT_CHANNEL	7
 #define OPP_DEFAULT_CHANNEL	9
@@ -1031,6 +1030,152 @@ static uint16_t get_profile_version(const sdp_record_t *rec)
 	return version;
 }
 
+static bool ext_matches_uuid(const struct ext_profile *ext, const char *uuid)
+{
+	if (!strcasecmp(ext->uuid, uuid))
+		return true;
+
+	return ext->service && !strcasecmp(ext->service, uuid);
+}
+
+static const char *ext_label(const struct ext_profile *ext)
+{
+	return ext->name ? ext->name : ext->uuid;
+}
+
+static bool record_uuid_list_contains(const sdp_list_t *list, uint16_t uuid16)
+{
+	sdp_list_t *entry;
+	uuid_t uuid;
+
+	sdp_uuid16_create(&uuid, uuid16);
+
+	for (entry = (sdp_list_t *) list; entry; entry = entry->next) {
+		uuid_t *value = entry->data;
+
+		if (value && sdp_uuid_cmp(value, &uuid) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+static bool record_has_uuid_attr(const sdp_record_t *rec, uint16_t attr,
+								uint16_t uuid16)
+{
+	sdp_list_t *list;
+	bool match;
+
+	if (sdp_get_uuidseq_attr(rec, attr, &list) < 0)
+		return false;
+
+	match = record_uuid_list_contains(list, uuid16);
+	sdp_list_free(list, free);
+
+	return match;
+}
+
+static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
+{
+	sdp_list_t *descs;
+	sdp_list_t *entry;
+	uuid_t uuid;
+	bool match = false;
+
+	if (sdp_get_profile_descs(rec, &descs) < 0)
+		return false;
+
+	sdp_uuid16_create(&uuid, uuid16);
+
+	for (entry = descs; entry; entry = entry->next) {
+		sdp_profile_desc_t *desc = entry->data;
+
+		if (desc && sdp_uuid_cmp(&desc->uuid, &uuid) == 0) {
+			match = true;
+			break;
+		}
+	}
+
+	sdp_list_free(descs, free);
+
+	return match;
+}
+
+static int record_get_proto_port(const sdp_record_t *rec, uint16_t uuid16)
+{
+	sdp_list_t *protos;
+	int port;
+
+	if (sdp_get_access_protos(rec, &protos) < 0)
+		return -ENOENT;
+
+	port = sdp_get_proto_port(protos, uuid16);
+	sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free, NULL);
+	sdp_list_free(protos, NULL);
+
+	return port;
+}
+
+static bool validate_service_record(struct ext_profile *ext,
+					const sdp_record_t *rec,
+					const struct ext_io *rfcomm)
+{
+	int expected_channel = 0;
+	int channel;
+
+	if (rfcomm)
+		expected_channel = rfcomm->chan;
+	else if (ext->local_chan > 0)
+		expected_channel = ext->local_chan;
+
+	channel = record_get_proto_port(rec, RFCOMM_UUID);
+
+	if (expected_channel > 0) {
+		if (channel <= 0 || channel > 30) {
+			error("%s ServiceRecord must advertise a valid RFCOMM channel",
+					ext_label(ext));
+			return false;
+		}
+
+		if (channel != expected_channel) {
+			error("%s ServiceRecord RFCOMM channel %d does not match server channel %d",
+					ext_label(ext), channel, expected_channel);
+			return false;
+		}
+	}
+
+	if (!ext_matches_uuid(ext, SPP_UUID))
+		return true;
+
+	if (!record_has_uuid_attr(rec, SDP_ATTR_SVCLASS_ID_LIST,
+					SERIAL_PORT_SVCLASS_ID)) {
+		error("%s ServiceRecord is missing the Serial Port service class",
+				ext_label(ext));
+		return false;
+	}
+
+	if (!record_has_uuid_attr(rec, SDP_ATTR_BROWSE_GRP_LIST,
+					PUBLIC_BROWSE_GROUP)) {
+		error("%s ServiceRecord is missing the Public Browse Group",
+				ext_label(ext));
+		return false;
+	}
+
+	if (!record_has_profile_desc(rec, SERIAL_PORT_PROFILE_ID)) {
+		error("%s ServiceRecord is missing the Serial Port profile descriptor",
+				ext_label(ext));
+		return false;
+	}
+
+	if (channel <= 0 || channel > 30) {
+		error("%s ServiceRecord must advertise a valid Serial Port RFCOMM channel",
+				ext_label(ext));
+		return false;
+	}
+
+	return true;
+}
+
 static bool send_new_connection(struct ext_profile *ext, struct ext_io *conn)
 {
 	DBusMessage *msg;
@@ -1340,6 +1485,11 @@ static uint32_t ext_register_record(struct ext_profile *ext,
 
 	if (!rec) {
 		error("Unable to parse record for %s", ext->name);
+		return 0;
+	}
+
+	if (!validate_service_record(ext, rec, rfcomm)) {
+		sdp_record_free(rec);
 		return 0;
 	}
 
@@ -2055,7 +2205,7 @@ static struct default_settings {
 	{
 		.uuid		= SPP_UUID,
 		.name		= "Serial Port",
-		.channel	= SPP_DEFAULT_CHANNEL,
+		.channel	= BTD_PROFILE_CHAN_AUTO,
 		.authorize	= true,
 		.get_record	= get_spp_record,
 		.version	= 0x0102,
@@ -2259,7 +2409,7 @@ static int parse_ext_opt(struct ext_profile *ext, const char *key,
 			return -EINVAL;
 
 		dbus_message_iter_get_basic(value, &u16);
-		if (u16 > 31)
+		if (u16 > 30)
 			return -EINVAL;
 		ext->local_chan = u16 ? u16 : BTD_PROFILE_CHAN_AUTO;
 	} else if (strcasecmp(key, "RequireAuthentication") == 0) {
@@ -2289,6 +2439,8 @@ static int parse_ext_opt(struct ext_profile *ext, const char *key,
 		} else if (g_str_equal(ext->role, "server")) {
 			ext->enable_server = true;
 			ext->enable_client = false;
+		} else {
+			return -EINVAL;
 		}
 	} else if (strcasecmp(key, "ServiceRecord") == 0) {
 		if (type != DBUS_TYPE_STRING)
@@ -2324,6 +2476,32 @@ static int parse_ext_opt(struct ext_profile *ext, const char *key,
 	}
 
 	return 0;
+}
+
+static bool validate_ext(struct ext_profile *ext)
+{
+	if (ext->record && !ext->enable_server) {
+		error("%s ServiceRecord requires server role support",
+				ext_label(ext));
+		return false;
+	}
+
+	if (!ext_matches_uuid(ext, SPP_UUID))
+		return true;
+
+	if (ext->local_psm) {
+		error("%s Serial Port profiles must not define a PSM",
+				ext_label(ext));
+		return false;
+	}
+
+	if (ext->record && ext->local_chan == BTD_PROFILE_CHAN_AUTO) {
+		error("%s Serial Port ServiceRecord requires an explicit Channel or the daemon-generated record",
+				ext_label(ext));
+		return false;
+	}
+
+	return true;
 }
 
 static void set_service(struct ext_profile *ext)
@@ -2376,6 +2554,7 @@ static struct ext_profile *create_ext(const char *owner, const char *path,
 	while (dbus_message_iter_get_arg_type(opts) == DBUS_TYPE_DICT_ENTRY) {
 		DBusMessageIter value, entry;
 		const char *key;
+		int err;
 
 		dbus_message_iter_recurse(opts, &entry);
 		dbus_message_iter_get_basic(&entry, &key);
@@ -2383,14 +2562,20 @@ static struct ext_profile *create_ext(const char *owner, const char *path,
 		dbus_message_iter_next(&entry);
 		dbus_message_iter_recurse(&entry, &value);
 
-		if (parse_ext_opt(ext, key, &value) < 0)
+		err = parse_ext_opt(ext, key, &value);
+		if (err < 0) {
 			error("Invalid value for profile option %s", key);
+			goto fail;
+		}
 
 		dbus_message_iter_next(opts);
 	}
 
 	if (!ext->service)
 		set_service(ext);
+
+	if (!validate_ext(ext))
+		goto fail;
 
 	if (ext->enable_server && !(ext->record || ext->get_record))
 		ext->get_record = get_generic_record;
@@ -2431,6 +2616,18 @@ static struct ext_profile *create_ext(const char *owner, const char *path,
 	adapter_foreach(adapter_add_profile, &ext->p);
 
 	return ext;
+
+fail:
+	g_free(ext->remote_uuid);
+	g_free(ext->name);
+	g_free(ext->owner);
+	free(ext->uuid);
+	free(ext->service);
+	g_free(ext->role);
+	g_free(ext->path);
+	g_free(ext->record);
+	g_free(ext);
+	return NULL;
 }
 
 static void remove_ext(struct ext_profile *ext)

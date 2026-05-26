@@ -58,6 +58,12 @@ Possible uuid values:
 	Features is one bit value, specify capability of Remote Audio Volume
 	Control (by default turned off).
 
+:"00001101-0000-1000-8000-00805f9b34fb":
+
+	SPP, default profile Version is 1.2. For server registrations BlueZ
+	allocates an RFCOMM channel dynamically when Channel is omitted or set
+	to 0, and publishes the generated SDP record.
+
 :"<vendor UUID>":
 
 	Vendor defined UUID, no defaults, must set options.
@@ -90,6 +96,9 @@ Possible options values:
 
 	If applicable it will be used in the SDP record as well.
 
+	Setting Channel to 0 requests daemon-assigned dynamic RFCOMM channel
+	allocation. For SPP this is the recommended server configuration.
+
 :uint16 PSM:
 
 	PSM number that is used for client and server UUIDs.
@@ -106,6 +115,9 @@ Possible options values:
 
 	Request authorization before any connection will be established.
 
+	For RFCOMM server transports BlueZ uses deferred setup so
+	authorization is resolved before the profile connection is completed.
+
 :boolean AutoConnect:
 
 	In case of a client UUID this will force connection of the RFCOMM or
@@ -114,6 +126,14 @@ Possible options values:
 :string ServiceRecord:
 
 	Provide a manual SDP record.
+
+	For SPP this is only accepted for server roles with an explicit,
+	non-zero Channel. The record must advertise the Serial Port service
+	class, Public Browse Group, Serial Port profile descriptor, and the
+	same RFCOMM channel that BlueZ listens on.
+
+	The daemon-generated record is the recommended path for SPP
+	interoperability and qualification.
 
 :uint16 Version:
 

@@ -33,6 +33,11 @@ protocol. The protocol is based on the ETSI standard TS 07.10.
 RFCOMM is a simple transport protocol, with additional provisions for emulating
 the 9 circuits of RS-232 (EIATIA-232-E) serial ports.
 
+For production SPP services, BlueZ ProfileManager registrations are the
+canonical interoperability and qualification surface. The rfcomm userspace tool
+is intended for compatibility testing, debugging, and manual interoperability
+checks rather than as the primary compliance path.
+
 SOCKET ADDRESS
 ==============
 
@@ -94,6 +99,9 @@ BT_DEFER_SETUP (since Linux 2.6.30)
 Channel defer connection setup, this control if the connection procedure
 needs to be authorized by userspace before responding which allows
 authorization at profile level, possible values:
+
+BlueZ uses this mechanism to implement ProfileManager RFCOMM server
+authorization before delivering a connection to the profile.
 
 .. csv-table::
     :header: "Value", "Description", "Authorization"

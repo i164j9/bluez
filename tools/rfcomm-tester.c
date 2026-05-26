@@ -17,12 +17,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <glib.h>
 
 #include "bluetooth/bluetooth.h"
 #include "bluetooth/rfcomm.h"
 #include "bluetooth/mgmt.h"
+
+#include "btio/btio.h"
 
 #include "monitor/bt.h"
 #include "emulator/bthost.h"
@@ -43,6 +46,8 @@ struct test_data {
 	uint16_t conn_handle;
 	uint16_t send_len;
 	uint16_t recv_len;
+	uint8_t server_channel;
+	bool confirm_seen;
 };
 
 struct rfcomm_client_data {
@@ -62,6 +67,12 @@ struct rfcomm_server_data {
 	const uint8_t *send_data;
 	const uint8_t *read_data;
 	uint16_t data_len;
+};
+
+struct rfcomm_btio_server_data {
+	uint8_t server_channel;
+	BtIOSecLevel sec_level;
+	bool authorize;
 };
 
 static void print_debug(const char *str, void *user_data)
@@ -370,6 +381,17 @@ const struct rfcomm_server_data listen_nval = {
 	.server_channel = 0x0c,
 	.client_channel = 0x0e,
 	.expected_status = false
+};
+
+const struct rfcomm_btio_server_data btio_listen_auto = {
+	.server_channel = 0,
+	.sec_level = BT_IO_SEC_MEDIUM,
+};
+
+const struct rfcomm_btio_server_data btio_listen_authorize = {
+	.server_channel = 0x0c,
+	.sec_level = BT_IO_SEC_MEDIUM,
+	.authorize = true,
 };
 
 static void test_basic(const void *test_data)
@@ -738,6 +760,110 @@ static gboolean rfcomm_listen_cb(GIOChannel *io, GIOCondition cond,
 	return false;
 }
 
+static void btio_rfcomm_client_connect_cb(uint16_t handle, uint16_t cid,
+						void *user_data, bool status)
+{
+	if (!status)
+		tester_test_failed();
+}
+
+static void btio_rfcomm_server_connect_cb(GIOChannel *io, GError *err,
+							gpointer user_data)
+{
+	struct test_data *data = tester_get_data();
+	const struct rfcomm_btio_server_data *srv = data->test_data;
+
+	if (err != NULL) {
+		tester_warn("btio RFCOMM server connect failed: %s", err->message);
+		tester_test_failed();
+		return;
+	}
+
+	if (srv->authorize && !data->confirm_seen) {
+		tester_warn("btio RFCOMM server connect completed without confirm callback");
+		tester_test_failed();
+		g_io_channel_shutdown(io, TRUE, NULL);
+		return;
+	}
+
+	g_io_channel_shutdown(io, TRUE, NULL);
+	tester_test_passed();
+}
+
+static void btio_rfcomm_server_confirm_cb(GIOChannel *io, gpointer user_data)
+{
+	struct test_data *data = tester_get_data();
+	GError *err = NULL;
+
+	data->confirm_seen = true;
+
+	if (bt_io_accept(io, btio_rfcomm_server_connect_cb, NULL, NULL, &err))
+		return;
+
+	tester_warn("bt_io_accept failed: %s", err ? err->message : "unknown error");
+	g_clear_error(&err);
+	tester_test_failed();
+}
+
+static void client_new_conn_btio(uint16_t handle, void *user_data)
+{
+	struct test_data *data = tester_get_data();
+	struct bthost *bthost = hciemu_client_get_host(data->hciemu);
+
+	bthost_connect_rfcomm(bthost, handle, data->server_channel,
+					btio_rfcomm_client_connect_cb, NULL);
+}
+
+static void test_server_btio(const void *test_data)
+{
+	struct test_data *data = tester_get_data();
+	const struct rfcomm_btio_server_data *srv = data->test_data;
+	const uint8_t *central_addr;
+	struct bthost *bthost;
+	GError *err = NULL;
+	GIOChannel *io;
+	bdaddr_t src;
+	uint8_t channel = 0;
+
+	central_addr = hciemu_get_central_bdaddr(data->hciemu);
+	bacpy(&src, (const bdaddr_t *) central_addr);
+
+	io = bt_io_listen(btio_rfcomm_server_connect_cb,
+			srv->authorize ? btio_rfcomm_server_confirm_cb : NULL,
+			NULL, NULL, &err,
+			BT_IO_OPT_SOURCE_BDADDR, &src,
+			BT_IO_OPT_SOURCE_TYPE, BDADDR_BREDR,
+			BT_IO_OPT_SEC_LEVEL, srv->sec_level,
+			BT_IO_OPT_CHANNEL, srv->server_channel,
+			BT_IO_OPT_INVALID);
+	if (io == NULL) {
+		tester_warn("bt_io_listen failed: %s", err ? err->message : "unknown error");
+		g_clear_error(&err);
+		tester_test_failed();
+		return;
+	}
+
+	if (!bt_io_get(io, &err, BT_IO_OPT_CHANNEL, &channel,
+					BT_IO_OPT_INVALID)) {
+		tester_warn("bt_io_get channel failed: %s", err->message);
+		g_clear_error(&err);
+		g_io_channel_unref(io);
+		tester_test_failed();
+		return;
+	}
+
+	data->io = io;
+	data->server_channel = channel;
+	data->confirm_seen = false;
+
+	tester_print("Listening for btio RFCOMM connections on channel %u",
+			channel);
+
+	bthost = hciemu_client_get_host(data->hciemu);
+	bthost_set_connect_cb(bthost, client_new_conn_btio, data);
+	bthost_hci_connect(bthost, central_addr, BDADDR_BREDR);
+}
+
 static void connection_cb(uint16_t handle, uint16_t cid, void *user_data,
 								bool status)
 {
@@ -857,6 +983,11 @@ int main(int argc, char *argv[])
 				test_server);
 	test_rfcomm("Basic RFCOMM Socket Server - Conn Refused", &listen_nval,
 					setup_powered_server, test_server);
+	test_rfcomm("BtIO RFCOMM Server - Dynamic Channel", &btio_listen_auto,
+					setup_powered_server, test_server_btio);
+	test_rfcomm("BtIO RFCOMM Server - Authorization Confirm",
+					&btio_listen_authorize, setup_powered_server,
+					test_server_btio);
 
 	return tester_run();
 }

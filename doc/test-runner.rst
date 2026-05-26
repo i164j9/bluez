@@ -167,6 +167,13 @@ Running bluetoothctl with emulated controller and audio support
 	[CHG] Controller 00:AA:01:00:00:00 UUIDs: 00001801-0000-1000-8000-00805f9b34fb
 	[CHG] Controller 00:AA:01:00:00:00 UUIDs: 0000180a-0000-1000-8000-00805f9b34fb
 	[CHG] Controller 00:AA:01:00:00:00 UUIDs: 0000111e-0000-1000-8000-00805f9b34fb
+
+Running the daemon-backed SPP remote SDP discovery test
+-------------------------------------------------------
+
+.. code-block::
+
+	$ tools/test-runner -d -k /pathto/bzImage -- tools/profile-tester
 	[CHG] Controller 00:AA:01:00:00:00 Class: 0x006c0000 (7077888)
 	[CHG] Controller 00:AA:01:00:00:00 UUIDs: 0000110e-0000-1000-8000-00805f9b34fb
 	[CHG] Controller 00:AA:01:00:00:00 UUIDs: 0000111f-0000-1000-8000-00805f9b34fb
