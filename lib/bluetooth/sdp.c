@@ -1921,6 +1921,12 @@ int sdp_get_add_access_protos(const sdp_record_t *rec, sdp_list_t **pap)
 	return sdp_get_proto_descs(SDP_ATTR_ADD_PROTO_DESC_LIST, rec, pap);
 }
 
+void sdp_list_free_proto_descs(sdp_list_t *protos)
+{
+	sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free, NULL);
+	sdp_list_free(protos, NULL);
+}
+
 int sdp_get_uuidseq_attr(const sdp_record_t *rec, uint16_t attr,
 							sdp_list_t **seqp)
 {

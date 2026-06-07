@@ -487,21 +487,26 @@ int sdp_profile_uuid2strn(const uuid_t *uuid, char *str, size_t n);
  * and 0 is returned. If the value does not exist, -1 is
  * returned and errno set to ENODATA.
  *
- * In all the methods below, the memory management rules are
- * simple. Don't free anything! The pointer returned, in the
- * case of constructed types, is a pointer to the contents
- * of the sdp_record_t.
+ * Unless documented otherwise, the pointer returned in the
+ * case of constructed types is a pointer to the contents of
+ * the sdp_record_t and must not be freed by the caller.
  */
 
 /*
- * Get the access protocols from the service record
+ * Get the access protocols from the service record.
+ * The returned nested list is heap-allocated and must be
+ * freed with sdp_list_free_proto_descs().
  */
 int sdp_get_access_protos(const sdp_record_t *rec, sdp_list_t **protos);
 
 /*
- * Get the additional access protocols from the service record
+ * Get the additional access protocols from the service record.
+ * The returned nested list is heap-allocated and must be
+ * freed with sdp_list_free_proto_descs().
  */
 int sdp_get_add_access_protos(const sdp_record_t *rec, sdp_list_t **protos);
+
+void sdp_list_free_proto_descs(sdp_list_t *protos);
 
 /*
  * Extract the list of browse groups to which the service belongs.

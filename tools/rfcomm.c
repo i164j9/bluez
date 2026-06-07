@@ -43,6 +43,7 @@ static int secure = 0;
 static int central = 0;
 static int linger = 0;
 static int connect_timeout_ms = -1;
+static const char *service_name = NULL;
 
 #define RFCOMM_CHANNEL_MIN 1
 #define RFCOMM_CHANNEL_MAX 30
@@ -157,13 +158,65 @@ static int parse_rfcomm_dev_id(const char *arg, int *dev_id)
 	return 0;
 }
 
+static int select_serial_port_channel_from_records(sdp_list_t *rsp,
+						const char *name,
+						uint8_t *channel,
+						unsigned int *matches)
+{
+	sdp_list_t *entry;
+	unsigned int total_matches = 0;
+	int err = -1;
+
+	for (entry = rsp; entry; entry = entry->next) {
+		sdp_record_t *record = entry->data;
+		sdp_list_t *protos = NULL;
+		char remote_name[256];
+		int have_name;
+		int port;
+
+		remote_name[0] = '\0';
+		have_name = sdp_get_service_name(record, remote_name,
+						sizeof(remote_name)) == 0;
+
+		if (name && (!have_name || strcmp(remote_name, name) != 0))
+			continue;
+
+		if (sdp_get_access_protos(record, &protos) < 0)
+			continue;
+
+		port = sdp_get_proto_port(protos, RFCOMM_UUID);
+		sdp_list_free_proto_descs(protos);
+
+		if (port < RFCOMM_CHANNEL_MIN || port > RFCOMM_CHANNEL_MAX)
+			continue;
+
+		total_matches++;
+		if (total_matches == 1) {
+			*channel = port;
+			err = 0;
+		}
+
+		if (name)
+			break;
+	}
+
+	if (matches)
+		*matches = total_matches;
+
+	return err;
+}
+
 static int lookup_serial_port_channel(const bdaddr_t *src,
-					const bdaddr_t *dst, uint8_t *channel)
+					const bdaddr_t *dst,
+					const char *name,
+					uint8_t *channel)
 {
 	sdp_session_t *sdp;
 	sdp_list_t *srch = NULL, *attrs = NULL, *rsp = NULL, *entry;
 	uuid_t svclass;
-	uint16_t attr = SDP_ATTR_PROTO_DESC_LIST;
+	uint16_t attr_name = SDP_ATTR_SVCNAME_PRIMARY;
+	uint16_t attr_proto = SDP_ATTR_PROTO_DESC_LIST;
+	unsigned int matches = 0;
 	int err = -1;
 
 	sdp = sdp_connect(src, dst, SDP_RETRY_IF_BUSY);
@@ -172,7 +225,8 @@ static int lookup_serial_port_channel(const bdaddr_t *src,
 
 	sdp_uuid16_create(&svclass, SERIAL_PORT_SVCLASS_ID);
 	srch = sdp_list_append(NULL, &svclass);
-	attrs = sdp_list_append(NULL, &attr);
+	attrs = sdp_list_append(NULL, &attr_name);
+	attrs = sdp_list_append(attrs, &attr_proto);
 
 	if (!srch || !attrs)
 		goto done;
@@ -181,23 +235,12 @@ static int lookup_serial_port_channel(const bdaddr_t *src,
 				SDP_ATTR_REQ_INDIVIDUAL, attrs, &rsp) < 0)
 		goto done;
 
-	for (entry = rsp; entry; entry = entry->next) {
-		sdp_record_t *record = entry->data;
-		sdp_list_t *protos = NULL;
-		int port;
+	err = select_serial_port_channel_from_records(rsp, name, channel,
+							&matches);
 
-		if (sdp_get_access_protos(record, &protos) < 0)
-			continue;
-
-		port = sdp_get_proto_port(protos, RFCOMM_UUID);
-		sdp_list_free(protos, NULL);
-
-		if (port >= RFCOMM_CHANNEL_MIN && port <= RFCOMM_CHANNEL_MAX) {
-			*channel = port;
-			err = 0;
-			break;
-		}
-	}
+	if (!name && matches > 1)
+		fprintf(stderr,
+			"Multiple Serial Port SDP records matched; using the first channel. Use --service-name to select a specific service.\n");
 
 done:
 	if (rsp)
@@ -216,13 +259,18 @@ static int resolve_remote_channel(const bdaddr_t *src, const bdaddr_t *dst,
 {
 	char addr[18];
 
-	if (lookup_serial_port_channel(src, dst, channel) == 0)
+	if (lookup_serial_port_channel(src, dst, service_name, channel) == 0)
 		return 0;
 
 	ba2str(dst, addr);
-	fprintf(stderr,
-		"Can't find Serial Port RFCOMM channel for %s via SDP\n",
-		addr);
+	if (service_name)
+		fprintf(stderr,
+			"Can't find Serial Port RFCOMM channel for %s via SDP matching service '%s'\n",
+			addr, service_name);
+	else
+		fprintf(stderr,
+			"Can't find Serial Port RFCOMM channel for %s via SDP\n",
+			addr);
 	return -1;
 }
 
@@ -262,7 +310,7 @@ static int register_local_serial_port(const bdaddr_t *src, uint8_t channel,
 	sdp_set_service_classes(record, svclass_id);
 
 	sdp_uuid16_create(&profile.uuid, SERIAL_PORT_PROFILE_ID);
-	profile.version = 0x0100;
+	profile.version = 0x0102;
 	profiles = sdp_list_append(NULL, &profile);
 	sdp_set_profile_descs(record, profiles);
 
@@ -1159,10 +1207,12 @@ static void usage(void)
 		"\t-S, --secure                   Secure connection\n"
 		"\t-C, --central                  Become the central of a piconet\n"
 		"\t-L, --linger [seconds]         Set linger timeout\n"
+		"\t-n, --service-name name        Match a specific remote SDP service name\n"
 		"\t-a                             Show all devices (default)\n"
 		"\n"
 		"When connect/bind omit [channel], rfcomm resolves the Serial Port RFCOMM\n"
-		"channel via SDP. listen/watch publish a local Serial Port SDP record while\n"
+		"channel via SDP. Use --service-name when a peer advertises multiple Serial\n"
+		"Port records. listen/watch publish a local Serial Port SDP record while\n"
 		"they are serving.\n"
 		"\n");
 
@@ -1185,6 +1235,7 @@ static struct option main_options[] = {
 	{ "master",	0, 0, 'M' }, /* Deprecated. Kept for compatibility. */
 	{ "central",	0, 0, 'C' },
 	{ "linger",	1, 0, 'L' },
+		{ "service-name", 1, 0, 'n' },
 	{ 0, 0, 0, 0 }
 };
 
@@ -1254,6 +1305,9 @@ int main(int argc, char *argv[])
 			linger = linger_value;
 			break;
 
+		case 'n':
+			service_name = optarg;
+			break;
 		default:
 			exit(1);
 		}

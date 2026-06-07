@@ -164,6 +164,11 @@ void __btd_log_init(const char *debug, int detach)
 {
 	int option = LOG_NDELAY | LOG_PID;
 
+	if (enabled) {
+		g_strfreev(enabled);
+		enabled = NULL;
+	}
+
 	if (debug != NULL)
 		enabled = g_strsplit_set(debug, ":, ", 0);
 

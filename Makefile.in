@@ -383,11 +383,12 @@ am__EXEEXT_15 = unit/test-tester$(EXEEXT) unit/test-eir$(EXEEXT) \
 	unit/test-avdtp$(EXEEXT) unit/test-avctp$(EXEEXT) \
 	unit/test-avrcp$(EXEEXT) unit/test-hfp$(EXEEXT) \
 	unit/test-gdbus-client$(EXEEXT) $(am__EXEEXT_12) \
-	unit/test-lib$(EXEEXT) unit/test-gatt$(EXEEXT) \
-	unit/test-hog$(EXEEXT) unit/test-gattrib$(EXEEXT) \
-	unit/test-bap$(EXEEXT) unit/test-micp$(EXEEXT) \
-	unit/test-bass$(EXEEXT) unit/test-vcp$(EXEEXT) \
-	unit/test-battery$(EXEEXT) $(am__EXEEXT_13) $(am__EXEEXT_14)
+	unit/test-lib$(EXEEXT) unit/test-rfcomm$(EXEEXT) \
+	unit/test-gatt$(EXEEXT) unit/test-hog$(EXEEXT) \
+	unit/test-gattrib$(EXEEXT) unit/test-bap$(EXEEXT) \
+	unit/test-micp$(EXEEXT) unit/test-bass$(EXEEXT) \
+	unit/test-vcp$(EXEEXT) unit/test-battery$(EXEEXT) \
+	$(am__EXEEXT_13) $(am__EXEEXT_14)
 @MAINTAINER_MODE_TRUE@am__EXEEXT_16 = $(am__EXEEXT_15)
 @LOGGER_TRUE@am__EXEEXT_17 = tools/btmon-logger$(EXEEXT)
 @OBEX_TRUE@am__EXEEXT_18 = obexd/src/obexd$(EXEEXT)
@@ -1927,6 +1928,10 @@ am_unit_test_queue_OBJECTS = unit/test-queue.$(OBJEXT)
 unit_test_queue_OBJECTS = $(am_unit_test_queue_OBJECTS)
 unit_test_queue_DEPENDENCIES = src/libshared-glib.la \
 	$(am__DEPENDENCIES_1)
+am_unit_test_rfcomm_OBJECTS = unit/test-rfcomm.$(OBJEXT)
+unit_test_rfcomm_OBJECTS = $(am_unit_test_rfcomm_OBJECTS)
+unit_test_rfcomm_DEPENDENCIES = src/libshared-glib.la \
+	lib/libbluetooth-internal.la $(am__DEPENDENCIES_1)
 am_unit_test_ringbuf_OBJECTS = unit/test-ringbuf.$(OBJEXT)
 unit_test_ringbuf_OBJECTS = $(am_unit_test_ringbuf_OBJECTS)
 unit_test_ringbuf_DEPENDENCIES = src/libshared-glib.la \
@@ -2387,10 +2392,11 @@ am__depfiles_remade = attrib/$(DEPDIR)/att.Po \
 	unit/$(DEPDIR)/test-gobex.Po unit/$(DEPDIR)/test-hfp.Po \
 	unit/$(DEPDIR)/test-hog.Po unit/$(DEPDIR)/test-lib.Po \
 	unit/$(DEPDIR)/test-mgmt.Po unit/$(DEPDIR)/test-micp.Po \
-	unit/$(DEPDIR)/test-queue.Po unit/$(DEPDIR)/test-ringbuf.Po \
-	unit/$(DEPDIR)/test-sdp.Po unit/$(DEPDIR)/test-tester.Po \
-	unit/$(DEPDIR)/test-textfile.Po unit/$(DEPDIR)/test-uhid.Po \
-	unit/$(DEPDIR)/test-uuid.Po unit/$(DEPDIR)/test-vcp.Po \
+	unit/$(DEPDIR)/test-queue.Po unit/$(DEPDIR)/test-rfcomm.Po \
+	unit/$(DEPDIR)/test-ringbuf.Po unit/$(DEPDIR)/test-sdp.Po \
+	unit/$(DEPDIR)/test-tester.Po unit/$(DEPDIR)/test-textfile.Po \
+	unit/$(DEPDIR)/test-uhid.Po unit/$(DEPDIR)/test-uuid.Po \
+	unit/$(DEPDIR)/test-vcp.Po \
 	unit/$(DEPDIR)/test_mesh_crypto-test-mesh-crypto.Po \
 	unit/$(DEPDIR)/test_midi-test-midi.Po unit/$(DEPDIR)/util.Po
 am__mv = mv -f
@@ -2474,10 +2480,11 @@ SOURCES = $(ell_libell_internal_la_SOURCES) \
 	$(unit_test_hog_SOURCES) $(unit_test_lib_SOURCES) \
 	$(unit_test_mesh_crypto_SOURCES) $(unit_test_mgmt_SOURCES) \
 	$(unit_test_micp_SOURCES) $(unit_test_midi_SOURCES) \
-	$(unit_test_queue_SOURCES) $(unit_test_ringbuf_SOURCES) \
-	$(unit_test_sdp_SOURCES) $(unit_test_tester_SOURCES) \
-	$(unit_test_textfile_SOURCES) $(unit_test_uhid_SOURCES) \
-	$(unit_test_uuid_SOURCES) $(unit_test_vcp_SOURCES)
+	$(unit_test_queue_SOURCES) $(unit_test_rfcomm_SOURCES) \
+	$(unit_test_ringbuf_SOURCES) $(unit_test_sdp_SOURCES) \
+	$(unit_test_tester_SOURCES) $(unit_test_textfile_SOURCES) \
+	$(unit_test_uhid_SOURCES) $(unit_test_uuid_SOURCES) \
+	$(unit_test_vcp_SOURCES)
 DIST_SOURCES = $(am__ell_libell_internal_la_SOURCES_DIST) \
 	$(gdbus_libgdbus_internal_la_SOURCES) \
 	$(lib_libbluetooth_internal_la_SOURCES) \
@@ -2569,10 +2576,10 @@ DIST_SOURCES = $(am__ell_libell_internal_la_SOURCES_DIST) \
 	$(am__unit_test_mesh_crypto_SOURCES_DIST) \
 	$(unit_test_mgmt_SOURCES) $(unit_test_micp_SOURCES) \
 	$(am__unit_test_midi_SOURCES_DIST) $(unit_test_queue_SOURCES) \
-	$(unit_test_ringbuf_SOURCES) $(unit_test_sdp_SOURCES) \
-	$(unit_test_tester_SOURCES) $(unit_test_textfile_SOURCES) \
-	$(unit_test_uhid_SOURCES) $(unit_test_uuid_SOURCES) \
-	$(unit_test_vcp_SOURCES)
+	$(unit_test_rfcomm_SOURCES) $(unit_test_ringbuf_SOURCES) \
+	$(unit_test_sdp_SOURCES) $(unit_test_tester_SOURCES) \
+	$(unit_test_textfile_SOURCES) $(unit_test_uhid_SOURCES) \
+	$(unit_test_uuid_SOURCES) $(unit_test_vcp_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -3420,10 +3427,10 @@ unit_tests = unit/test-tester unit/test-eir unit/test-uuid \
 	unit/test-ecc unit/test-ringbuf unit/test-queue unit/test-mgmt \
 	unit/test-uhid unit/test-sdp unit/test-avdtp unit/test-avctp \
 	unit/test-avrcp unit/test-hfp unit/test-gdbus-client \
-	$(am__append_83) unit/test-lib unit/test-gatt unit/test-hog \
-	unit/test-gattrib unit/test-bap unit/test-micp unit/test-bass \
-	unit/test-vcp unit/test-battery $(am__append_84) \
-	$(am__append_85)
+	$(am__append_83) unit/test-lib unit/test-rfcomm unit/test-gatt \
+	unit/test-hog unit/test-gattrib unit/test-bap unit/test-micp \
+	unit/test-bass unit/test-vcp unit/test-battery \
+	$(am__append_84) $(am__append_85)
 @CLIENT_TRUE@client_bluetoothctl_SOURCES = client/main.c \
 @CLIENT_TRUE@					client/print.h client/print.c \
 @CLIENT_TRUE@					client/display.h client/display.c \
@@ -4048,6 +4055,10 @@ unit_test_gdbus_client_LDADD = gdbus/libgdbus-internal.la \
 @OBEX_TRUE@unit_test_gobex_apparam_LDADD = src/libshared-glib.la $(GLIB_LIBS)
 unit_test_lib_SOURCES = unit/test-lib.c
 unit_test_lib_LDADD = src/libshared-glib.la \
+				lib/libbluetooth-internal.la $(GLIB_LIBS)
+
+unit_test_rfcomm_SOURCES = unit/test-rfcomm.c
+unit_test_rfcomm_LDADD = src/libshared-glib.la \
 				lib/libbluetooth-internal.la $(GLIB_LIBS)
 
 unit_test_gatt_SOURCES = unit/test-gatt.c
@@ -6268,6 +6279,12 @@ unit/test-queue.$(OBJEXT): unit/$(am__dirstamp) \
 unit/test-queue$(EXEEXT): $(unit_test_queue_OBJECTS) $(unit_test_queue_DEPENDENCIES) $(EXTRA_unit_test_queue_DEPENDENCIES) unit/$(am__dirstamp)
 	@rm -f unit/test-queue$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(unit_test_queue_OBJECTS) $(unit_test_queue_LDADD) $(LIBS)
+unit/test-rfcomm.$(OBJEXT): unit/$(am__dirstamp) \
+	unit/$(DEPDIR)/$(am__dirstamp)
+
+unit/test-rfcomm$(EXEEXT): $(unit_test_rfcomm_OBJECTS) $(unit_test_rfcomm_DEPENDENCIES) $(EXTRA_unit_test_rfcomm_DEPENDENCIES) unit/$(am__dirstamp)
+	@rm -f unit/test-rfcomm$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(unit_test_rfcomm_OBJECTS) $(unit_test_rfcomm_LDADD) $(LIBS)
 unit/test-ringbuf.$(OBJEXT): unit/$(am__dirstamp) \
 	unit/$(DEPDIR)/$(am__dirstamp)
 
@@ -6935,6 +6952,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-mgmt.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-micp.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-queue.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-rfcomm.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-ringbuf.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-sdp.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@unit/$(DEPDIR)/test-tester.Po@am__quote@ # am--include-marker
@@ -10374,6 +10392,13 @@ unit/test-lib.log: unit/test-lib$(EXEEXT)
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
+unit/test-rfcomm.log: unit/test-rfcomm$(EXEEXT)
+	@p='unit/test-rfcomm$(EXEEXT)'; \
+	b='unit/test-rfcomm'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 unit/test-gatt.log: unit/test-gatt$(EXEEXT)
 	@p='unit/test-gatt$(EXEEXT)'; \
 	b='unit/test-gatt'; \
@@ -11319,6 +11344,7 @@ distclean: distclean-am
 	-rm -f unit/$(DEPDIR)/test-mgmt.Po
 	-rm -f unit/$(DEPDIR)/test-micp.Po
 	-rm -f unit/$(DEPDIR)/test-queue.Po
+	-rm -f unit/$(DEPDIR)/test-rfcomm.Po
 	-rm -f unit/$(DEPDIR)/test-ringbuf.Po
 	-rm -f unit/$(DEPDIR)/test-sdp.Po
 	-rm -f unit/$(DEPDIR)/test-tester.Po
@@ -11929,6 +11955,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f unit/$(DEPDIR)/test-mgmt.Po
 	-rm -f unit/$(DEPDIR)/test-micp.Po
 	-rm -f unit/$(DEPDIR)/test-queue.Po
+	-rm -f unit/$(DEPDIR)/test-rfcomm.Po
 	-rm -f unit/$(DEPDIR)/test-ringbuf.Po
 	-rm -f unit/$(DEPDIR)/test-sdp.Po
 	-rm -f unit/$(DEPDIR)/test-tester.Po

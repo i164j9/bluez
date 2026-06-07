@@ -18,15 +18,19 @@ Area: SPP server registration
 Surface: ProfileManager1 RegisterProfile using SPP UUID and no Channel
 Expected result: BlueZ allocates an RFCOMM channel dynamically and publishes a
 generated Serial Port SDP record.
-Automation: Covered by daemon-side validation in src/profile.c and emulator
+Automation: Covered by daemon-side validation in src/profile.c,
+tools/profile-tester.c (ProfileManager SPP Dynamic Channel), and emulator
 transport coverage in tools/rfcomm-tester.c (BtIO RFCOMM Server - Dynamic
 Channel).
-Qualification run: PTS/manual browse of the published local SDP record.
+Qualification run: PTS/manual browse of the published local SDP record plus a
+repo-owned bluetoothd private-bus run that resolves the allocated local SDP
+channel and completes an incoming RFCOMM connection on that channel.
 
 Area: Manual SPP ServiceRecord validation
 Surface: ProfileManager1 RegisterProfile using SPP UUID with ServiceRecord
 Expected result: BlueZ rejects malformed records and records whose RFCOMM
-channel does not match the configured listening channel.
+channel or Serial Port profile version does not match the configured
+listening channel and SPP version.
 Automation: Covered by daemon-side validation in src/profile.c.
 Qualification run: Negative RegisterProfile coverage plus SDP browse of the
 accepted record.
@@ -36,7 +40,8 @@ Surface: ProfileManager1 RegisterProfile with RequireAuthorization=true
 Expected result: Incoming RFCOMM setup is deferred until the profile accepts
 the connection.
 Automation: Covered by tools/rfcomm-tester.c (BtIO RFCOMM Server -
-Authorization Confirm).
+Authorization Confirm) and tools/profile-tester.c (ProfileManager SPP
+Authorization Gate).
 Qualification run: PTS or manual incoming connection attempts with profile-side
 acceptance logging enabled.
 
@@ -45,19 +50,60 @@ Surface: ProfileManager1 RequireAuthentication and tools/rfcomm security
 settings
 Expected result: Server and compatibility-tool sockets request BR/EDR security
 before profile traffic is exchanged.
-Automation: Validate via emulator transport tests where available and manual
-interoperability runs for peer-specific behavior.
+Automation: Covered on the daemon/ProfileManager path by tools/profile-tester.c
+(ProfileManager SPP Authentication Required) for incoming BR/EDR pairing plus
+emulator transport validation where available. tools/rfcomm security flags
+remain a compatibility/manual validation surface.
 Qualification run: Pairing, authentication, and encrypted reconnect coverage in
 the BR/EDR PTS plan.
+
+Area: Authentication-gated incoming SPP
+Surface: ProfileManager1 RegisterProfile with RequireAuthentication=true,
+Role=server, and a fixed RFCOMM channel on repo-owned bluetoothd
+Expected result: Agent1 pairing callbacks are observed before Profile1
+NewConnection, and the incoming RFCOMM connect succeeds only after BR/EDR
+authentication completes.
+Automation: Covered by tools/profile-tester.c (ProfileManager SPP
+Authentication Required) using a private bus, an auto-accepting Agent1 test
+interface, and a peer-initiated RFCOMM connection with matching PIN handling.
+Qualification run: Incoming SPP pairing/authentication matrix plus repo-owned
+daemon regression runs.
 
 Area: Remote SDP discovery
 Surface: tools/rfcomm connect path without an explicit RFCOMM channel
 Expected result: BlueZ discovers the peer Serial Port channel through SDP
-before opening RFCOMM.
+before opening RFCOMM. As a compatibility tool, rfcomm warns and uses the
+first valid Serial Port record when multiple remote matches exist unless
+--service-name is supplied.
 Automation: Covered by tools/profile-tester.c using bluetoothd,
-ProfileManager1, hciemu, and an emulated peer-side SDP responder.
+ProfileManager1, hciemu, and an emulated peer-side SDP responder,
+including multi-record SPP peers where the client Name must uniquely match
+the desired remote service.
 Qualification run: PTS SDP/SPP browse and connect matrix against remote SPP
 servers.
+
+Area: Repeated SPP reconnect
+Surface: ProfileManager1 ConnectProfile/DisconnectProfile on the SPP UUID
+through repo-owned bluetoothd on a private bus
+Expected result: The first NewConnection disconnects cleanly through
+RequestDisconnection, a second ConnectProfile succeeds on the same peer, and
+the helper exits successfully.
+Automation: Covered by tools/profile-tester.c (ProfileManager SPP Reconnect
+Cycle) and the private-bus helper run-private-profile-tester.sh.
+Qualification run: Repeated connect/disconnect matrix against remote SPP
+servers plus repo-owned daemon regression runs.
+
+Area: Authorization-gated incoming SPP
+Surface: ProfileManager1 RegisterProfile with RequireAuthorization=true,
+Role=server, and a fixed RFCOMM channel on repo-owned bluetoothd
+Expected result: Agent1.AuthorizeService is observed before Profile1
+NewConnection, and the incoming RFCOMM connect succeeds only after the agent
+accepts the service.
+Automation: Covered by tools/profile-tester.c (ProfileManager SPP
+Authorization Gate) using a private bus, an auto-accepting Agent1 test
+interface, and a peer-initiated RFCOMM connection.
+Qualification run: Incoming SPP authorization matrix plus repo-owned daemon
+regression runs.
 
 Recommended PTS-oriented runs
 -----------------------------
@@ -70,7 +116,13 @@ Recommended PTS-oriented runs
 3. Register a fixed-channel SPP server with a manual ServiceRecord and verify
    that malformed or channel-mismatched records are rejected.
 4. Use tools/rfcomm as a compatibility client against remote SPP servers to
-   confirm SDP-based channel discovery and BR/EDR security negotiation.
+  confirm SDP-based channel discovery and BR/EDR security negotiation. Use
+  --service-name when a peer advertises multiple Serial Port records and you
+  need deterministic service selection.
+5. Run the private-bus profile tester against repo-owned bluetoothd and verify
+  the Remote SDP Discovery, Dynamic Channel, Reconnect Cycle,
+  Authentication Required, and Authorization Gate cases complete with a
+  successful status.log artifact.
 
 Logging guidance
 ----------------
@@ -78,5 +130,16 @@ Logging guidance
 - Run bluetoothd in the foreground with debug enabled for src/profile.c when
   validating registration, SDP publication, and authorization flow.
 - Capture btmon traces for BR/EDR setup, SDP browse, and RFCOMM establishment.
+- Capture Agent1 pairing callbacks alongside authorization callbacks when
+  validating RequireAuthentication and RequireAuthorization server cases.
 - Record the allocated RFCOMM channel and the SDP browse output for each PTS or
   interoperability run.
+- For repo-owned daemon validation, keep the private-bus helper status.log and
+  profile-tester.log artifacts together so pass/fail state and NewConnection
+  sequencing can be reviewed after root-owned runs.
+- The private-bus helper starts bluetoothd with --compat so local SDP browse
+  validation can resolve daemon-published dynamic RFCOMM channels through the
+  local SDP socket before exercising the incoming server path.
+- The private-bus helper also writes a btmon capture to
+  the configured RUN_DIR as private-bus.btmon. Keep it with the tester and
+  status logs when reviewing authorization ordering and RFCOMM setup details.

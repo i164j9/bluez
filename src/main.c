@@ -54,6 +54,7 @@
 #include "dbus-common.h"
 #include "agent.h"
 #include "profile.h"
+#include "sdp-client.h"
 
 #define BLUEZ_NAME "org.bluez"
 
@@ -1547,6 +1548,7 @@ int main(int argc, char *argv[])
 	btd_device_cleanup();
 
 	adapter_cleanup();
+	bt_search_cleanup();
 
 	rfkill_exit();
 

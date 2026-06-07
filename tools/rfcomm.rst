@@ -51,6 +51,10 @@ OPTIONS
 
 -L <seconds>    Set linger timeout
 
+-n <name>
+    Match a specific remote Serial Port SDP service name when resolving a
+    channel via SDP.
+
 COMMANDS
 ========
 
@@ -60,7 +64,11 @@ show <*dev*>
 connect <*dev*> [*bdaddr*] [*channel*]
     Connect the RFCOMM device to the remote Bluetooth device on the specified
     channel. If no  channel  is  specified, it will use the channel
-    number **1**. This command can be terminated with the key sequence CTRL-C.
+    number **1**. When the channel is omitted, **rfcomm** first tries to
+    resolve the Serial Port channel through SDP. If the remote device exposes
+    multiple matching Serial Port records and **-n** is not provided, the tool
+    prints a warning and uses the first valid channel. This command can be
+    terminated with the key sequence CTRL-C.
 
 listen <*dev*> [*channel*] [*cmd*]
     Listen  on  a specified RFCOMM channel for incoming connections.  If no
@@ -80,8 +88,10 @@ bind <*dev*> [*bdaddr*] [*channel*]
     This binds the RFCOMM device to a remote Bluetooth device. The command
     does not establish a connection to the remote  device, it only creates
     the binding. The connection will be established right after an application
-    tries to open the RFCOMM device. If no channel number is specified, it
-    uses the channel number **1**.
+    tries to open the RFCOMM device. If no channel number is specified,
+    **rfcomm** first resolves the Serial Port channel through SDP and applies
+    the same warning-and-first-match behavior described for **connect** unless
+    **-n** is used to select a specific remote service name.
 
 release <*dev*>
     This command releases a defined RFCOMM binding.

@@ -26,10 +26,10 @@
 
 int sdp_search_hcrp(sdp_session_t *sdp, unsigned short *ctrl_psm, unsigned short *data_psm)
 {
-	sdp_list_t *srch, *attrs, *rsp;
+	sdp_list_t *srch = NULL, *attrs = NULL, *rsp = NULL;
 	uuid_t svclass;
 	uint16_t attr1, attr2;
-	int err;
+	int err = -1;
 
 	if (!sdp)
 		return -1;
@@ -44,14 +44,15 @@ int sdp_search_hcrp(sdp_session_t *sdp, unsigned short *ctrl_psm, unsigned short
 
 	err = sdp_service_search_attr_req(sdp, srch, SDP_ATTR_REQ_INDIVIDUAL, attrs, &rsp);
 	if (err)
-		return -1;
+		goto done;
 
 	for (; rsp; rsp = rsp->next) {
 		sdp_record_t *rec = (sdp_record_t *) rsp->data;
-		sdp_list_t *protos;
+		sdp_list_t *protos = NULL;
 
 		if (!sdp_get_access_protos(rec, &protos)) {
 			unsigned short psm = sdp_get_proto_port(protos, L2CAP_UUID);
+			sdp_list_free_proto_descs(protos);
 			if (psm > 0) {
 				*ctrl_psm = psm;
 			}
@@ -59,22 +60,32 @@ int sdp_search_hcrp(sdp_session_t *sdp, unsigned short *ctrl_psm, unsigned short
 
 		if (!sdp_get_add_access_protos(rec, &protos)) {
 			unsigned short psm = sdp_get_proto_port(protos, L2CAP_UUID);
+			sdp_list_free_proto_descs(protos);
 			if (psm > 0 && *ctrl_psm > 0) {
 				*data_psm = psm;
-				return 0;
+				err = 0;
+				goto done;
 			}
 		}
 	}
 
-	return -1;
+done:
+	if (rsp)
+		sdp_list_free(rsp, (sdp_free_func_t) sdp_record_free);
+	if (attrs)
+		sdp_list_free(attrs, NULL);
+	if (srch)
+		sdp_list_free(srch, NULL);
+
+	return err;
 }
 
 int sdp_search_spp(sdp_session_t *sdp, uint8_t *channel)
 {
-	sdp_list_t *srch, *attrs, *rsp;
+	sdp_list_t *srch = NULL, *attrs = NULL, *rsp = NULL;
 	uuid_t svclass;
 	uint16_t attr;
-	int err;
+	int err = -1;
 
 	if (!sdp)
 		return -1;
@@ -87,20 +98,30 @@ int sdp_search_spp(sdp_session_t *sdp, uint8_t *channel)
 
 	err = sdp_service_search_attr_req(sdp, srch, SDP_ATTR_REQ_INDIVIDUAL, attrs, &rsp);
 	if (err)
-		return -1;
+		goto done;
 
 	for (; rsp; rsp = rsp->next) {
 		sdp_record_t *rec = (sdp_record_t *) rsp->data;
-		sdp_list_t *protos;
+		sdp_list_t *protos = NULL;
 
 		if (!sdp_get_access_protos(rec, &protos)) {
 			uint8_t ch = sdp_get_proto_port(protos, RFCOMM_UUID);
+			sdp_list_free_proto_descs(protos);
 			if (ch > 0) {
 				*channel = ch;
-				return 0;
+				err = 0;
+				goto done;
 			}
 		}
 	}
 
-	return -1;
+done:
+	if (rsp)
+		sdp_list_free(rsp, (sdp_free_func_t) sdp_record_free);
+	if (attrs)
+		sdp_list_free(attrs, NULL);
+	if (srch)
+		sdp_list_free(srch, NULL);
+
+	return err;
 }

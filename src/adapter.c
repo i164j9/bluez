@@ -311,6 +311,7 @@ struct btd_adapter {
 	guint auth_idle_id;		/* Pending authorization dequeue */
 	GQueue *auths;			/* Ongoing and pending auths */
 	bool pincode_requested;		/* PIN requested during last bonding */
+	bool removing;			/* adapter teardown is in progress */
 	GSList *connections;		/* Connected devices */
 	GSList *devices;		/* Devices structure pointers */
 	GSList *connect_list;		/* Devices to connect when found */
@@ -732,6 +733,9 @@ struct set_mode_data {
 	uint8_t value;
 };
 
+static bool is_expected_teardown_mgmt_failure(struct btd_adapter *adapter,
+							uint8_t status);
+
 static void set_mode_complete(uint8_t status, uint16_t length,
 					const void *param, void *user_data)
 {
@@ -739,6 +743,16 @@ static void set_mode_complete(uint8_t status, uint16_t length,
 	struct btd_adapter *adapter = data->adapter;
 
 	if (status != MGMT_STATUS_SUCCESS) {
+		if (is_expected_teardown_mgmt_failure(adapter, status)) {
+			btd_debug(adapter->dev_id,
+				"Ignoring mode change failure during teardown: %s (0x%02x)",
+				mgmt_errstr(status), status);
+			adapter->pending_settings &= ~data->setting;
+			if (data->setting & MGMT_SETTING_POWERED)
+				reset_power_state_target(adapter, data->value);
+			return;
+		}
+
 		btd_error(adapter->dev_id, "Failed to set mode: %s (0x%02x)",
 						mgmt_errstr(status), status);
 		if (status == MGMT_STATUS_RFKILLED)
@@ -1164,12 +1178,34 @@ static int add_uuid(struct btd_adapter *adapter, uuid_t *uuid, uint8_t svc_hint)
 	return -EIO;
 }
 
+static bool is_expected_teardown_mgmt_failure(struct btd_adapter *adapter,
+							uint8_t status)
+{
+	if (!powering_down && !adapter->removing)
+		return false;
+
+	switch (status) {
+	case MGMT_STATUS_AUTH_FAILED:
+	case MGMT_STATUS_INVALID_INDEX:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static void remove_uuid_complete(uint8_t status, uint16_t length,
 					const void *param, void *user_data)
 {
 	struct btd_adapter *adapter = user_data;
 
 	if (status != MGMT_STATUS_SUCCESS) {
+		if (is_expected_teardown_mgmt_failure(adapter, status)) {
+			btd_debug(adapter->dev_id,
+				"Ignoring remove UUID failure during teardown: %s (0x%02x)",
+				mgmt_errstr(status), status);
+			return;
+		}
+
 		btd_error(adapter->dev_id, "Failed to remove UUID: %s (0x%02x)",
 						mgmt_errstr(status), status);
 		return;
@@ -3077,7 +3113,12 @@ static void property_set_mode_complete(uint8_t status, uint16_t length,
 	if (status != MGMT_STATUS_SUCCESS) {
 		const char *dbus_err;
 
-		btd_error(adapter->dev_id, "Failed to set mode: %s (0x%02x)",
+		if (is_expected_teardown_mgmt_failure(adapter, status))
+			btd_debug(adapter->dev_id,
+				"Ignoring mode change failure during teardown: %s (0x%02x)",
+				mgmt_errstr(status), status);
+		else
+			btd_error(adapter->dev_id, "Failed to set mode: %s (0x%02x)",
 						mgmt_errstr(status), status);
 
 		if (status == MGMT_STATUS_RFKILLED) {
@@ -7062,6 +7103,8 @@ static void adapter_remove(struct btd_adapter *adapter)
 
 	DBG("Removing adapter %s", adapter->path);
 
+	mgmt_cancel_index(adapter->mgmt, adapter->dev_id);
+
 	g_slist_free(adapter->connect_list);
 	adapter->connect_list = NULL;
 
@@ -9394,6 +9437,12 @@ static int adapter_register(struct btd_adapter *adapter)
 		agent_unref(agent);
 	}
 
+	if (adapter->battery_provider_manager) {
+		btd_battery_provider_manager_destroy(
+				adapter->battery_provider_manager);
+		adapter->battery_provider_manager = NULL;
+	}
+
 	adapter->battery_provider_manager =
 		btd_battery_provider_manager_create(adapter);
 
@@ -9408,6 +9457,9 @@ static int adapter_register(struct btd_adapter *adapter)
 	if (!adapter->database) {
 		btd_error(adapter->dev_id,
 				"Failed to create GATT database for adapter");
+		btd_battery_provider_manager_destroy(
+				adapter->battery_provider_manager);
+		adapter->battery_provider_manager = NULL;
 		adapters = g_slist_remove(adapters, adapter);
 		return -EINVAL;
 	}
@@ -9423,6 +9475,17 @@ static int adapter_register(struct btd_adapter *adapter)
 				btd_error(adapter->dev_id,
 						"Failed to create Adv Monitor "
 						"Manager for adapter");
+				btd_adv_manager_destroy(adapter->adv_manager);
+				adapter->adv_manager = NULL;
+
+				btd_gatt_database_destroy(adapter->database);
+				adapter->database = NULL;
+
+				btd_battery_provider_manager_destroy(
+						adapter->battery_provider_manager);
+				adapter->battery_provider_manager = NULL;
+
+				adapters = g_slist_remove(adapters, adapter);
 				return -EINVAL;
 			}
 		} else {
@@ -9476,6 +9539,7 @@ load:
 static int adapter_unregister(struct btd_adapter *adapter)
 {
 	DBG("Unregister path: %s", adapter->path);
+	adapter->removing = true;
 
 	adapters = g_slist_remove(adapters, adapter);
 

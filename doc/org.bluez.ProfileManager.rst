@@ -74,6 +74,12 @@ Possible options values:
 
 	Human readable name for the profile
 
+	For SPP client registrations, when a remote device exposes multiple
+	Serial Port SDP records for the same UUID, BlueZ uses Name to prefer a
+	unique remote service-name match during ConnectProfile. If no unique
+	match is available, the connect attempt is rejected instead of silently
+	choosing the first record.
+
 :string Service:
 
 	The primary service class UUID (if different from the actual profile
@@ -129,8 +135,8 @@ Possible options values:
 
 	For SPP this is only accepted for server roles with an explicit,
 	non-zero Channel. The record must advertise the Serial Port service
-	class, Public Browse Group, Serial Port profile descriptor, and the
-	same RFCOMM channel that BlueZ listens on.
+	class, Public Browse Group, the expected Serial Port profile version,
+	and the same RFCOMM channel that BlueZ listens on.
 
 	The daemon-generated record is the recommended path for SPP
 	interoperability and qualification.

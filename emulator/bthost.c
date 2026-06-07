@@ -58,6 +58,7 @@
 #define RFCOMM_CTRL(type, pf)	(((type & 0xef) | (pf << 4)))
 #define RFCOMM_LEN8(len)	(((len) << 1) | 1)
 #define RFCOMM_LEN16(len)	((len) << 1)
+#define RFCOMM_TEST_PF(control)	(((control) & 0x10) >> 4)
 #define RFCOMM_MCC_TYPE(cr, type)	(((type << 2) | (cr << 1) | 0x01))
 
 /* RFCOMM FCS calculation */
@@ -2896,7 +2897,7 @@ static void rfcomm_msc_recv(struct bthost *bthost, struct btconn *conn,
 	msc_cmd.v24_sig = msc->v24_sig;
 
 	rfcomm_uih_send(bthost, conn, l2conn, RFCOMM_ADDR(0, 0),
-				RFCOMM_MCC_TYPE(cr, RFCOMM_MSC), &msc_cmd,
+				RFCOMM_MCC_TYPE(!cr, RFCOMM_MSC), &msc_cmd,
 				sizeof(msc_cmd));
 }
 
@@ -2967,7 +2968,7 @@ static void rfcomm_uih_recv(struct bthost *bthost, struct btconn *conn,
 {
 	const struct rfcomm_hdr *hdr = data;
 	uint16_t hdr_len, data_len;
-	const void *p;
+	const uint8_t *p;
 
 	if (len < sizeof(*hdr)) {
 		bthost_debug(bthost, "RFCOMM UIH: too short");
@@ -2993,6 +2994,11 @@ static void rfcomm_uih_recv(struct bthost *bthost, struct btconn *conn,
 
 	if (RFCOMM_GET_DLCI(hdr->address)) {
 		struct rfcomm_chan_hook *hook;
+
+		if (RFCOMM_TEST_PF(hdr->control) && data_len > 0) {
+			p++;
+			data_len--;
+		}
 
 		hook = find_rfcomm_chan_hook(conn,
 					RFCOMM_GET_CHANNEL(hdr->address));
@@ -4134,10 +4140,10 @@ void bthost_send_rfcomm_data(struct bthost *bthost, uint16_t handle,
 	hdr->address = RFCOMM_ADDR(1, channel * 2);
 	hdr->control = RFCOMM_CTRL(RFCOMM_UIH, 0);
 	if (len > 127) {
-		hdr->length  = RFCOMM_LEN16(cpu_to_le16(sizeof(*hdr) + len));
+		hdr->length  = RFCOMM_LEN16(cpu_to_le16(len));
 		memcpy(uih_frame + sizeof(*hdr) + 1, data, len);
 	} else {
-		hdr->length  = RFCOMM_LEN8(sizeof(*hdr) + len);
+		hdr->length  = RFCOMM_LEN8(len);
 		memcpy(uih_frame + sizeof(*hdr), data, len);
 	}
 

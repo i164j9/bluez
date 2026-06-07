@@ -954,6 +954,7 @@ static void device_free(gpointer user_data)
 	btd_bearer_destroy(device->bredr);
 	btd_bearer_destroy(device->le);
 
+	free(device->irk);
 	g_free(device->local_csrk);
 	g_free(device->remote_csrk);
 	free(device->ltk);
@@ -5937,12 +5938,24 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 	DBusMessage *reply;
 	GSList *primaries;
 	char addr[18];
+	bool partial_records = false;
 
 	ba2str(&device->bdaddr, addr);
 
-	if (err < 0) {
-		error("%s: error updating services: %s (%d)",
+	if (err < 0 && (req->records || recs)) {
+		warn("%s: SDP browse failed after records were discovered: %s (%d)",
 				addr, strerror(-err), -err);
+		partial_records = true;
+		err = 0;
+	}
+
+	if (err < 0) {
+		if (device->connect)
+			error("%s: error updating services: %s (%d)",
+					addr, strerror(-err), -err);
+		else
+			DBG("%s: background service update failed during teardown: %s (%d)",
+					addr, strerror(-err), -err);
 		goto send_reply;
 	}
 
@@ -5956,7 +5969,11 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 	req->records = NULL;
 
 	if (!req->profiles_added) {
-		DBG("%s: No service update", addr);
+		if (partial_records)
+			DBG("%s: Preserved previously discovered services after late SDP failure",
+					addr);
+		else
+			DBG("%s: No service update", addr);
 		goto send_reply;
 	}
 

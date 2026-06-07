@@ -855,14 +855,23 @@ static gboolean ext_io_disconnected(GIOChannel *io, GIOCondition cond,
 	struct ext_io *conn = user_data;
 	struct ext_profile *ext = conn->ext;
 	GError *gerr = NULL;
+	bool teardown_disconnect;
 	char addr[18];
 
 	if (cond & G_IO_NVAL)
 		return FALSE;
 
+	teardown_disconnect = conn->connected ||
+			(conn->service && btd_service_get_state(conn->service) !=
+						BTD_SERVICE_STATE_CONNECTING);
+
 	bt_io_get(io, &gerr, BT_IO_OPT_DEST, addr, BT_IO_OPT_INVALID);
 	if (gerr != NULL) {
-		error("Unable to get io data for %s: %s",
+		if (teardown_disconnect)
+			DBG("Unable to get io data for %s during teardown: %s",
+						ext->name, gerr->message);
+		else
+			error("Unable to get io data for %s: %s",
 						ext->name, gerr->message);
 		g_error_free(gerr);
 		goto drop;
@@ -1032,7 +1041,10 @@ static uint16_t get_profile_version(const sdp_record_t *rec)
 
 static bool ext_matches_uuid(const struct ext_profile *ext, const char *uuid)
 {
-	if (!strcasecmp(ext->uuid, uuid))
+	if (!ext || !uuid)
+		return false;
+
+	if (ext->uuid && !strcasecmp(ext->uuid, uuid))
 		return true;
 
 	return ext->service && !strcasecmp(ext->service, uuid);
@@ -1075,7 +1087,9 @@ static bool record_has_uuid_attr(const sdp_record_t *rec, uint16_t attr,
 	return match;
 }
 
-static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
+static bool record_has_profile_desc_version(const sdp_record_t *rec,
+						uint16_t uuid16,
+						uint16_t version)
 {
 	sdp_list_t *descs;
 	sdp_list_t *entry;
@@ -1090,7 +1104,8 @@ static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
 	for (entry = descs; entry; entry = entry->next) {
 		sdp_profile_desc_t *desc = entry->data;
 
-		if (desc && sdp_uuid_cmp(&desc->uuid, &uuid) == 0) {
+		if (desc && sdp_uuid_cmp(&desc->uuid, &uuid) == 0 &&
+				(version == 0 || desc->version == version)) {
 			match = true;
 			break;
 		}
@@ -1099,6 +1114,11 @@ static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
 	sdp_list_free(descs, free);
 
 	return match;
+}
+
+static bool record_has_profile_desc(const sdp_record_t *rec, uint16_t uuid16)
+{
+	return record_has_profile_desc_version(rec, uuid16, 0);
 }
 
 static int record_get_proto_port(const sdp_record_t *rec, uint16_t uuid16)
@@ -1162,8 +1182,15 @@ static bool validate_service_record(struct ext_profile *ext,
 	}
 
 	if (!record_has_profile_desc(rec, SERIAL_PORT_PROFILE_ID)) {
-		error("%s ServiceRecord is missing the Serial Port profile descriptor",
-				ext_label(ext));
+		error("%s ServiceRecord must advertise Serial Port profile version 0x%04x",
+				ext_label(ext), ext->version);
+		return false;
+	}
+
+	if (!record_has_profile_desc_version(rec, SERIAL_PORT_PROFILE_ID,
+						ext->version)) {
+		error("%s ServiceRecord must advertise Serial Port profile version 0x%04x",
+				ext_label(ext), ext->version);
 		return false;
 	}
 
@@ -1340,7 +1367,6 @@ static struct ext_io *create_conn(struct ext_io *server, GIOChannel *io,
 	struct btd_device *device;
 	struct btd_service *service;
 	struct ext_io *conn;
-	GIOCondition cond;
 	char addr[18];
 
 	device = btd_adapter_find_device(server->adapter, dst, BDADDR_BREDR);
@@ -1375,9 +1401,6 @@ done:
 
 	if (service)
 		conn->service = btd_service_ref(service);
-
-	cond = G_IO_HUP | G_IO_ERR | G_IO_NVAL;
-	conn->io_id = g_io_add_watch(io, cond, ext_io_disconnected, conn);
 
 	return conn;
 }
@@ -1793,11 +1816,119 @@ static uint16_t get_goep_l2cap_psm(sdp_record_t *rec)
 	return data->val.uint16;
 }
 
+static int record_get_service_endpoints(const sdp_record_t *rec,
+						uint16_t *psm,
+						uint8_t *chan)
+{
+	sdp_list_t *protos;
+	int port;
+
+	if (psm)
+		*psm = 0;
+
+	if (chan)
+		*chan = 0;
+
+	if (sdp_get_access_protos((sdp_record_t *) rec, &protos) < 0)
+		return -ENOENT;
+
+	port = sdp_get_proto_port(protos, L2CAP_UUID);
+	if (psm && port > 0)
+		*psm = port;
+
+	port = sdp_get_proto_port(protos, RFCOMM_UUID);
+	if (chan && port > 0 && port <= 30)
+		*chan = port;
+
+	if (psm && *psm == 0 && sdp_get_proto_desc(protos, OBEX_UUID))
+		*psm = get_goep_l2cap_psm((sdp_record_t *) rec);
+
+	sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free, NULL);
+	sdp_list_free(protos, NULL);
+
+	if ((psm && *psm) || (chan && *chan))
+		return 0;
+
+	return -ENOENT;
+}
+
+static bool record_matches_service_name(const sdp_record_t *rec,
+						const char *name)
+{
+	char service_name[256];
+
+	if (!name)
+		return false;
+
+	service_name[0] = '\0';
+	if (sdp_get_service_name((sdp_record_t *) rec, service_name,
+					sizeof(service_name)) < 0)
+		return false;
+
+	return g_str_equal(service_name, name);
+}
+
+static int select_remote_service_record(struct ext_profile *ext,
+						sdp_list_t *recs,
+						const sdp_record_t **selected)
+{
+	const sdp_record_t *first = NULL;
+	const sdp_record_t *named = NULL;
+	bool use_service_name;
+	unsigned int matches = 0;
+	unsigned int name_matches = 0;
+	sdp_list_t *r;
+
+	use_service_name = ext_matches_uuid(ext, SPP_UUID) && ext->name;
+
+	for (r = recs; r != NULL; r = r->next) {
+		sdp_record_t *rec = r->data;
+		uint16_t psm;
+		uint8_t chan;
+
+		if (record_get_service_endpoints(rec, &psm, &chan) < 0)
+			continue;
+
+		matches++;
+		if (!first)
+			first = rec;
+
+		if (use_service_name && record_matches_service_name(rec,
+							ext->name)) {
+			name_matches++;
+			if (!named)
+				named = rec;
+		}
+	}
+
+	if (matches == 0)
+		return -ENOENT;
+
+	if (!use_service_name || matches == 1) {
+		*selected = first;
+		return 0;
+	}
+
+	if (name_matches == 1) {
+		*selected = named;
+		return 0;
+	}
+
+	if (name_matches > 1)
+		error("Multiple remote Serial Port SDP records matched Name '%s' for %s",
+				ext->name, ext_label(ext));
+	else
+		error("Multiple remote Serial Port SDP records found for %s; set Name to the desired remote service name",
+				ext_label(ext));
+
+	return -ENOTSUP;
+}
+
 static void record_cb(sdp_list_t *recs, int err, gpointer user_data)
 {
 	struct ext_io *conn = user_data;
 	struct ext_profile *ext = conn->ext;
-	sdp_list_t *r;
+	const sdp_record_t *rec = NULL;
 
 	conn->resolving = false;
 
@@ -1813,35 +1944,16 @@ static void record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto failed;
 	}
 
-	for (r = recs; r != NULL; r = r->next) {
-		sdp_record_t *rec = r->data;
-		sdp_list_t *protos;
-		int port;
+	err = select_remote_service_record(ext, recs, &rec);
+	if (err < 0)
+		goto failed;
 
-		if (sdp_get_access_protos(rec, &protos) < 0) {
-			error("Unable to get proto list from %s record",
+	err = record_get_service_endpoints(rec, &conn->psm, &conn->chan);
+	if (err < 0) {
+		error("Failed to find L2CAP PSM or RFCOMM channel for %s",
 								ext->name);
-			err = -ENOTSUP;
-			goto failed;
-		}
-
-		port = sdp_get_proto_port(protos, L2CAP_UUID);
-		if (port > 0)
-			conn->psm = port;
-
-		port = sdp_get_proto_port(protos, RFCOMM_UUID);
-		if (port > 0)
-			conn->chan = port;
-
-		if (conn->psm == 0 && sdp_get_proto_desc(protos, OBEX_UUID))
-			conn->psm = get_goep_l2cap_psm(rec);
-
-		sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free,
-									NULL);
-		sdp_list_free(protos, NULL);
-
-		if (conn->chan || conn->psm)
-			break;
+		err = -ENOTSUP;
+		goto failed;
 	}
 
 	if (!conn->chan && !conn->psm) {
@@ -1906,6 +2018,11 @@ static int ext_connect_dev(struct btd_service *service)
 
 	conn = g_new0(struct ext_io, 1);
 	conn->ext = ext;
+	conn->adapter = btd_adapter_ref(adapter);
+	conn->device = btd_device_ref(dev);
+	conn->service = btd_service_ref(service);
+
+	ext->conns = g_slist_append(ext->conns, conn);
 
 	if (ext->remote_psm || ext->remote_chan) {
 		conn->psm = ext->remote_psm;
@@ -1920,16 +2037,11 @@ static int ext_connect_dev(struct btd_service *service)
 	if (err < 0)
 		goto failed;
 
-	conn->adapter = btd_adapter_ref(adapter);
-	conn->device = btd_device_ref(dev);
-	conn->service = btd_service_ref(service);
-
-	ext->conns = g_slist_append(ext->conns, conn);
-
 	return 0;
 
 failed:
-	g_free(conn);
+	ext->conns = g_slist_remove(ext->conns, conn);
+	ext_io_destroy(conn);
 	return err;
 }
 
@@ -1949,7 +2061,7 @@ static int send_disconn_req(struct ext_profile *ext, struct ext_io *conn)
 
 	path = device_get_path(conn->device);
 	dbus_message_append_args(msg, DBUS_TYPE_OBJECT_PATH, &path,
-							DBUS_TYPE_INVALID);
+					DBUS_TYPE_INVALID);
 
 	if (!g_dbus_send_message_with_reply(btd_get_dbus_connection(),
 						msg, &conn->pending, -1)) {
@@ -1985,6 +2097,11 @@ static int ext_disconnect_dev(struct btd_service *service)
 		return -EBUSY;
 
 	err = send_disconn_req(ext, conn);
+	if (err < 0)
+		return err;
+
+	return 0;
+	conn->device = btd_device_ref(dev);
 	if (err < 0)
 		return err;
 
@@ -2480,6 +2597,8 @@ static int parse_ext_opt(struct ext_profile *ext, const char *key,
 
 static bool validate_ext(struct ext_profile *ext)
 {
+	sdp_record_t *rec = NULL;
+
 	if (ext->record && !ext->enable_server) {
 		error("%s ServiceRecord requires server role support",
 				ext_label(ext));
@@ -2500,6 +2619,23 @@ static bool validate_ext(struct ext_profile *ext)
 				ext_label(ext));
 		return false;
 	}
+
+	if (!ext->record)
+		return true;
+
+	rec = sdp_xml_parse_record(ext->record, strlen(ext->record));
+	if (!rec) {
+		error("%s ServiceRecord is not valid SDP XML",
+				ext_label(ext));
+		return false;
+	}
+
+	if (!validate_service_record(ext, rec, NULL)) {
+		sdp_record_free(rec);
+		return false;
+	}
+
+	sdp_record_free(rec);
 
 	return true;
 }

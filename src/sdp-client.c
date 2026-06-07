@@ -450,3 +450,14 @@ void bt_clear_cached_session(const bdaddr_t *src, const bdaddr_t *dst)
 	if (session)
 		sdp_close(session);
 }
+
+void bt_search_cleanup(void)
+{
+	while (cached_sdp_sessions) {
+		struct cached_sdp_session *cached = cached_sdp_sessions->data;
+
+		timeout_remove(cached->timer);
+		g_source_remove(cached->io_id);
+		cleanup_cached_session(cached);
+	}
+}

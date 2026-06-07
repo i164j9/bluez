@@ -19,3 +19,4 @@ int bt_search_service(const bdaddr_t *src, const bdaddr_t *dst,
 			bt_destroy_t destroy, uint16_t flags);
 int bt_cancel_discovery(const bdaddr_t *src, const bdaddr_t *dst);
 void bt_clear_cached_session(const bdaddr_t *src, const bdaddr_t *dst);
+void bt_search_cleanup(void);

@@ -1,5 +1,9 @@
 build/debug/
 build/release/
+build/lsan/
+
+obex-real/
+obex-test/
 
 autom4te.cache/output.*
 autom4te.cache/traces.*

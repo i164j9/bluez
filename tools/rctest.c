@@ -96,7 +96,7 @@ static float tv2fl(struct timeval tv)
 static uint8_t get_channel(const char *svr, uint16_t uuid)
 {
 	sdp_session_t *sdp;
-	sdp_list_t *srch, *attrs, *rsp, *protos = NULL;
+	sdp_list_t *srch = NULL, *attrs = NULL, *rsp = NULL;
 	uuid_t svclass;
 	uint16_t attr;
 	bdaddr_t dst;
@@ -122,17 +122,19 @@ static uint8_t get_channel(const char *svr, uint16_t uuid)
 
 	for (; rsp; rsp = rsp->next) {
 		sdp_record_t *rec = (sdp_record_t *) rsp->data;
+		sdp_list_t *protos = NULL;
 
 		if (!sdp_get_access_protos(rec, &protos)) {
 			channel = sdp_get_proto_port(protos, RFCOMM_UUID);
+			sdp_list_free_proto_descs(protos);
 			if (channel > 0)
 				break;
 		}
 	}
 
-	sdp_list_free(protos, NULL);
-
 done:
+	if (rsp)
+		sdp_list_free(rsp, (sdp_free_func_t) sdp_record_free);
 	sdp_list_free(srch, NULL);
 	sdp_list_free(attrs, NULL);
 	sdp_close(sdp);

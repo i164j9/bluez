@@ -73,13 +73,54 @@ static void test_sdp_get_access_protos_valid(const void *data)
 
 	err = sdp_get_access_protos(rec, &aproto);
 	g_assert(err == 0);
-	sdp_list_foreach(aproto, (sdp_list_func_t) sdp_list_free, NULL);
-	sdp_list_free(aproto, NULL);
+	sdp_list_free_proto_descs(aproto);
 
 	err = sdp_get_add_access_protos(rec, &aproto);
 	g_assert(err == 0);
-	sdp_list_foreach(aproto, (sdp_list_func_t) sdp_list_free, NULL);
+	sdp_list_free_proto_descs(aproto);
+
+	sdp_record_free(rec);
+	tester_test_passed();
+}
+
+static void test_sdp_list_free_proto_descs_valid(const void *data)
+{
+	sdp_record_t *rec;
+	sdp_list_t *aproto, *apseq, *proto[2];
+	const uint8_t u8 = 1;
+	uuid_t l2cap, rfcomm;
+	sdp_data_t *channel;
+	int err;
+
+	rec = sdp_record_alloc();
+	sdp_uuid16_create(&l2cap, L2CAP_UUID);
+	proto[0] = sdp_list_append(NULL, &l2cap);
+	apseq = sdp_list_append(NULL, proto[0]);
+
+	sdp_uuid16_create(&rfcomm, RFCOMM_UUID);
+	proto[1] = sdp_list_append(NULL, &rfcomm);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	aproto = sdp_list_append(NULL, apseq);
+	sdp_set_access_protos(rec, aproto);
+	sdp_set_add_access_protos(rec, aproto);
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], NULL);
+	sdp_list_free(proto[1], NULL);
+	sdp_list_free(apseq, NULL);
 	sdp_list_free(aproto, NULL);
+
+	err = sdp_get_access_protos(rec, &aproto);
+	g_assert(err == 0);
+	sdp_list_free_proto_descs(aproto);
+
+	err = sdp_get_add_access_protos(rec, &aproto);
+	g_assert(err == 0);
+	sdp_list_free_proto_descs(aproto);
+
+	sdp_list_free_proto_descs(NULL);
 
 	sdp_record_free(rec);
 	tester_test_passed();
@@ -465,6 +506,8 @@ int main(int argc, char *argv[])
 
 	tester_add("/lib/sdp_get_access_protos/valid", NULL, NULL,
 				test_sdp_get_access_protos_valid, NULL);
+	tester_add("/lib/sdp_list_free_proto_descs/valid", NULL, NULL,
+				test_sdp_list_free_proto_descs_valid, NULL);
 	tester_add("/lib/sdp_get_access_protos/nodata", NULL, NULL,
 				test_sdp_get_access_protos_nodata, NULL);
 	tester_add("/lib/sdp_get_access_protos/invalid_dtd1", NULL, NULL,

@@ -875,6 +875,8 @@ void tester_init(int *argc, char ***argv)
 	GOptionContext *context;
 	GError *error = NULL;
 
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
 	context = g_option_context_new(NULL);
 	g_option_context_add_main_entries(context, options, NULL);
 

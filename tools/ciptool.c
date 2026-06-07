@@ -73,11 +73,12 @@ static char *cmtp_flagstostr(uint32_t flags)
 
 static int get_psm(bdaddr_t *src, bdaddr_t *dst, unsigned short *psm)
 {
-	sdp_session_t *s;
-	sdp_list_t *srch, *attrs, *rsp;
+	sdp_session_t *s = NULL;
+	sdp_list_t *srch = NULL, *attrs = NULL, *rsp = NULL;
 	uuid_t svclass;
 	uint16_t attr;
 	int err;
+	int found = 0;
 
 	if (!(s = sdp_connect(src, dst, 0)))
 		return -1;
@@ -90,25 +91,35 @@ static int get_psm(bdaddr_t *src, bdaddr_t *dst, unsigned short *psm)
 
 	err = sdp_service_search_attr_req(s, srch, SDP_ATTR_REQ_INDIVIDUAL, attrs, &rsp);
 
-	sdp_close(s);
-
 	if (err)
-		return 0;
+		goto done;
 
 	for (; rsp; rsp = rsp->next) {
 		sdp_record_t *rec = (sdp_record_t *) rsp->data;
-		sdp_list_t *protos;
+		sdp_list_t *protos = NULL;
 
 		if (!sdp_get_access_protos(rec, &protos)) {
 			unsigned short p = sdp_get_proto_port(protos, L2CAP_UUID);
+			sdp_list_free_proto_descs(protos);
 			if (p > 0) {
 				*psm = p;
-				return 1;
+				found = 1;
+				goto done;
 			}
 		}
 	}
 
-	return 0;
+done:
+	if (rsp)
+		sdp_list_free(rsp, (sdp_free_func_t) sdp_record_free);
+	if (attrs)
+		sdp_list_free(attrs, NULL);
+	if (srch)
+		sdp_list_free(srch, NULL);
+	if (s)
+		sdp_close(s);
+
+	return found;
 }
 
 static int do_connect(int ctl, int dev_id, bdaddr_t *src, bdaddr_t *dst, unsigned short psm, uint32_t flags)
